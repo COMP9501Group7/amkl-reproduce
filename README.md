@@ -4,18 +4,23 @@ Paper: Lixin Duan, Dong Xu, Ivor Wai-Hung Tsang, and Jiebo Luo,
 "Visual Event Recognition in Videos by Learning from Web Data,"
 IEEE Transactions on Pattern Analysis and Machine Intelligence, 2012.
 
-This repository reproduces five methods on real frames with SIFT, dense HOF, and HSV color:
-SVM_T, SVM_ST (average of 24 kernels), MKL without MMD, A-MKL, and A-MKL without pre-learned classifiers.
+Two stages:
 
-DATA_ROOT/
-  source/{animal,water,city,vehicle}/*.mp4
-  target/{animal,water,city,vehicle}/*.mp4
+1. Data. `prepare.py` reads captions from `RAW_ROOT/source` and `RAW_ROOT/target`, labels animal / water / city / vehicle, and writes the clips.
+2. Result. `run.py` builds 24 ASTPM kernels (SIFT, dense HOF, HSV color) and writes SVM_T, SVM_ST, MKL, A-MKL, and A-MKL without pre-learned classifiers to `results/metrics.json`.
 
-Use 30 source clips and 24 target clips per class. Each of 10 repeats labels 3 target clips per class for training and tests the rest.
+Each clip is one `.mp4` and a `.txt` caption with the same stem. Put them in tar shards or directly in the domain folder:
 
 ```
-pip install -r requirements.txt
-DATA_ROOT=/path/to/data python run.py
+RAW_ROOT/source/*.tar
+RAW_ROOT/target/*.tar
 ```
 
-Feature cache: ./cache/features.npz
+```
+RAW_ROOT=/path/to/raw DATA_ROOT=data python prepare.py
+DATA_ROOT=data python run.py
+```
+
+`RAW_ROOT=/path/to/raw python run.py` runs both stages. Feature cache: `cache/features.npz`.
+
+Selection: keyword in the first 140 characters, class order animal, water, city, vehicle. City words are skyline, downtown, skyscraper, cityscape, metropolis. Vehicle words must fall in the first 80 characters. At most one clip per shard. Animal and vehicle keywords are capped at 3 clips. Near-duplicate first sentences are removed (ratio 0.66). Quotas: 30 source and 24 target clips per class. Each of 10 repeats (`numpy` seeds 1000–1009) labels 3 target clips per class and tests the rest.

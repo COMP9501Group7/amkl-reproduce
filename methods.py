@@ -132,7 +132,7 @@ def amkl(kernels, src, tgt, train, test, y, theta, use_mmd, use_pre, pre=None, i
         kc = sum(weights[i] * k_test[i] for i in range(m))
         _, e_test = extra(c)
         scores.append(model.decision_function(kc + e_test))
-    return np.argmax(np.stack(scores, 1), 1)
+    return np.argmax(np.stack(scores, 1), 1), weights.copy()
 
 
 def splits(y, tgt):
@@ -157,16 +157,39 @@ def evaluate(dists):
             raise RuntimeError(f"target class {name} needs more than {N_LABELED} clips")
     average = sum(kernels) / len(kernels)
     pre = prelearned(kernels, names, src, y)
-    scores = {name: [] for name in ("target", "source_target", "mkl", "amkl", "amkl_nopre")}
+    keys = ("target", "source_target", "mkl", "amkl", "amkl_nopre")
+    scores = {name: [] for name in keys}
+    correct = {name: [] for name in keys}
+    learned = {name: [] for name in ("mkl", "amkl", "amkl_nopre")}
+    n_test = None
     for labeled, test in splits(y, tgt):
         train = np.concatenate([src, labeled])
         yt = y[test]
-        scores["target"].append(float((svm_fixed(average, labeled, test, y) == yt).mean()))
-        scores["source_target"].append(float((svm_fixed(average, train, test, y) == yt).mean()))
-        pred = amkl(kernels, src, tgt, train, test, y, 1.0, False, False)
-        scores["mkl"].append(float((pred == yt).mean()))
-        pred = amkl(kernels, src, tgt, train, test, y, 1.0, True, True, pre)
-        scores["amkl"].append(float((pred == yt).mean()))
-        pred = amkl(kernels, src, tgt, train, test, y, 1.0, True, False)
-        scores["amkl_nopre"].append(float((pred == yt).mean()))
-    return scores
+        n_test = int(len(test))
+        pred = svm_fixed(average, labeled, test, y)
+        hit = int((pred == yt).sum())
+        correct["target"].append(hit)
+        scores["target"].append(hit / n_test)
+        pred = svm_fixed(average, train, test, y)
+        hit = int((pred == yt).sum())
+        correct["source_target"].append(hit)
+        scores["source_target"].append(hit / n_test)
+        for key, use_mmd, use_pre in (
+            ("mkl", False, False),
+            ("amkl", True, True),
+            ("amkl_nopre", True, False),
+        ):
+            pred, weights = amkl(
+                kernels, src, tgt, train, test, y, 1.0, use_mmd, use_pre, pre if use_pre else None
+            )
+            hit = int((pred == yt).sum())
+            correct[key].append(hit)
+            scores[key].append(hit / n_test)
+            learned[key].append(weights)
+    return {
+        "accuracy": scores,
+        "correct": correct,
+        "n_test": n_test,
+        "kernel_names": names,
+        "weights": {key: np.stack(rows) for key, rows in learned.items()},
+    }
