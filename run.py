@@ -3,14 +3,16 @@ import os
 from pathlib import Path
 
 from features import extract
-from methods import evaluate
+from methods import CLASSES, evaluate
 
 NAMES = (
-    ("target", "SVM_T (3 labeled target)"),
-    ("source_target", "SVM_ST (24-kernel average)"),
-    ("mkl", "MKL (no MMD)"),
+    ("svm_s", "SVM_S"),
+    ("svm_t", "SVM_T"),
+    ("svm_st", "SVM_ST"),
+    ("fr", "FR"),
+    ("mkl", "MKL"),
     ("amkl", "A-MKL"),
-    ("amkl_nopre", "A-MKL without pre-learned classifiers"),
+    ("amkl_nopre", "A-MKL_noPre"),
 )
 
 
@@ -20,27 +22,44 @@ def sample_std(values):
     return mean, var ** 0.5
 
 
+def pack(values):
+    mean, std = sample_std(values)
+    return {"mean": mean, "std": std, "per_seed": [float(v) for v in values]}
+
+
 def write_results(report, path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     names = list(report["kernel_names"])
     methods = {}
+    print("method\taccuracy\tmacro_precision")
     for key, title in NAMES:
-        mean, std = sample_std(report["accuracy"][key])
+        acc = pack(report["accuracy"][key])
+        prec = pack(report["precision"][key])
+        by_class = {}
+        columns = list(zip(*report["precision_per_class"][key]))
+        for label, column in zip(CLASSES, columns):
+            by_class[label] = pack(column)
         methods[title] = {
-            "mean": mean,
-            "std": std,
+            "accuracy": acc,
+            "macro_precision": prec,
+            "precision_per_class": by_class,
             "correct": report["correct"][key],
             "n_test": report["n_test"],
         }
-        print(f"{title}\t{mean * 100:.1f} ± {std * 100:.1f}%")
+        print(f"{title}\t{acc['mean'] * 100:.1f} ± {acc['std'] * 100:.1f}%\t{prec['mean'] * 100:.1f} ± {prec['std'] * 100:.1f}%")
     weights = {}
     for key, title in NAMES:
         if key not in report["weights"]:
             continue
         mean_w = report["weights"][key].mean(0)
         weights[title] = {name: float(value) for name, value in zip(names, mean_w)}
-    payload = {"n_test": report["n_test"], "n_seeds": len(report["correct"]["target"]), "methods": methods, "kernel_weights": weights}
+    payload = {
+        "n_test": report["n_test"],
+        "n_seeds": len(report["correct"]["svm_t"]),
+        "methods": methods,
+        "kernel_weights": weights,
+    }
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {path.as_posix()}")
 

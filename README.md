@@ -7,7 +7,7 @@ IEEE Transactions on Pattern Analysis and Machine Intelligence, 2012.
 Two stages:
 
 1. Data. `prepare.py` reads captions from `RAW_ROOT/source` and `RAW_ROOT/target`, labels animal / water / city / vehicle, and writes the clips.
-2. Result. `run.py` builds 24 ASTPM kernels (SIFT, dense HOF, HSV color) and writes SVM_T, SVM_ST, MKL, A-MKL, and A-MKL without pre-learned classifiers to `results/metrics.json`.
+2. Result. `run.py` builds 24 ASTPM kernels (SIFT, dense HOF, HSV color) and evaluates SVM_S, SVM_T, SVM_ST, FR, MKL, A-MKL, and A-MKL_noPre. `results/metrics.json` stores accuracy, macro precision, and per-class precision over 10 test draws.
 
 Each clip is one `.mp4` and a `.txt` caption with the same stem. Put them in tar shards or directly in the domain folder:
 

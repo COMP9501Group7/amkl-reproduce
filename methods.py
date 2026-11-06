@@ -77,6 +77,26 @@ def svm_fixed(kernel, train, test, y):
     return predict(models, kernel[np.ix_(test, train)])
 
 
+def replicate(kernel, domains):
+    same = (domains[:, None] == domains[None, :]).astype(np.float64)
+    return kernel * (1.0 + same)
+
+
+def class_precision(y_true, y_pred):
+    scores = []
+    for c in range(len(CLASSES)):
+        chosen = y_pred == c
+        tp = int(np.sum(chosen & (y_true == c)))
+        fp = int(np.sum(chosen & (y_true != c)))
+        scores.append(0.0 if tp + fp == 0 else tp / (tp + fp))
+    return scores
+
+
+def macro_precision(y_true, y_pred):
+    scores = class_precision(y_true, y_pred)
+    return float(sum(scores) / len(scores))
+
+
 def proj_simplex(v):
     u = np.sort(v)[::-1]
     css = np.cumsum(u)
@@ -156,9 +176,12 @@ def evaluate(dists):
         if int((y[tgt] == c).sum()) <= N_LABELED:
             raise RuntimeError(f"target class {name} needs more than {N_LABELED} clips")
     average = sum(kernels) / len(kernels)
+    fr_kernel = replicate(average, dists["domains"])
     pre = prelearned(kernels, names, src, y)
-    keys = ("target", "source_target", "mkl", "amkl", "amkl_nopre")
-    scores = {name: [] for name in keys}
+    keys = ("svm_s", "svm_t", "svm_st", "fr", "mkl", "amkl", "amkl_nopre")
+    accuracy = {name: [] for name in keys}
+    precision = {name: [] for name in keys}
+    per_class = {name: [] for name in keys}
     correct = {name: [] for name in keys}
     learned = {name: [] for name in ("mkl", "amkl", "amkl_nopre")}
     n_test = None
@@ -166,14 +189,12 @@ def evaluate(dists):
         train = np.concatenate([src, labeled])
         yt = y[test]
         n_test = int(len(test))
-        pred = svm_fixed(average, labeled, test, y)
-        hit = int((pred == yt).sum())
-        correct["target"].append(hit)
-        scores["target"].append(hit / n_test)
-        pred = svm_fixed(average, train, test, y)
-        hit = int((pred == yt).sum())
-        correct["source_target"].append(hit)
-        scores["source_target"].append(hit / n_test)
+        predictions = {
+            "svm_s": svm_fixed(average, src, test, y),
+            "svm_t": svm_fixed(average, labeled, test, y),
+            "svm_st": svm_fixed(average, train, test, y),
+            "fr": svm_fixed(fr_kernel, train, test, y),
+        }
         for key, use_mmd, use_pre in (
             ("mkl", False, False),
             ("amkl", True, True),
@@ -182,12 +203,18 @@ def evaluate(dists):
             pred, weights = amkl(
                 kernels, src, tgt, train, test, y, 1.0, use_mmd, use_pre, pre if use_pre else None
             )
+            predictions[key] = pred
+            learned[key].append(weights)
+        for key, pred in predictions.items():
             hit = int((pred == yt).sum())
             correct[key].append(hit)
-            scores[key].append(hit / n_test)
-            learned[key].append(weights)
+            accuracy[key].append(hit / n_test)
+            precision[key].append(macro_precision(yt, pred))
+            per_class[key].append(class_precision(yt, pred))
     return {
-        "accuracy": scores,
+        "accuracy": accuracy,
+        "precision": precision,
+        "precision_per_class": per_class,
         "correct": correct,
         "n_test": n_test,
         "kernel_names": names,
